@@ -138,11 +138,21 @@ game_level <- inner_join(caracteristicas, trayectoria, by = "appid")
 survival_data <- game_level |> filter(duration_months >= 3L)
 
 # Kaplan–Meier y log-rank comparan trayectorias sin ajuste por otras características.
-km <- survfit(Surv(duration_months, event_observed) ~ f2p_label, data = survival_data)
+km <- survfit(Surv(duration_months, event_observed) ~ f2p_label,
+              data = survival_data, conf.type = "log", conf.int = 0.95)
 logrank <- survdiff(Surv(duration_months, event_observed) ~ f2p_label, data = survival_data)
 logrank_multi <- survdiff(Surv(duration_months, event_observed) ~ multiplayer_label, data = survival_data)
 km_12 <- summary(km, times = 12)$surv
 names(km_12) <- sub("f2p_label=", "", summary(km, times = 12)$strata)
+# Los intervalos puntuales usan la varianza de Greenwood y la transformación logarítmica
+# que implementa survfit; n.risk cuenta juegos en riesgo justo antes del mes indicado.
+km_horizontes <- summary(km, times = c(12, 24, 36), extend = FALSE)
+tabla_km <- tibble(
+  acceso = sub("f2p_label=", "", as.character(km_horizontes$strata)),
+  mes = km_horizontes$time, en_riesgo = km_horizontes$n.risk,
+  estimacion = km_horizontes$surv, inferior = km_horizontes$lower,
+  superior = km_horizontes$upper
+)
 
 # Regla automática: popularidad superior al percentil 80 e historial de 24+ meses.
 umbral_casos <- quantile(survival_data$historical_max_avg, 0.8, na.rm = TRUE, names = FALSE)
@@ -164,6 +174,13 @@ casos_panel <- panel_retencion |>
   left_join(casos |> select(appid, event_month, event_observed), by = "appid")
 fin_casos <- casos_panel |> group_by(appid) |> slice_max(month_date, n = 1, with_ties = FALSE) |>
   ungroup() |> arrange(appid)
+# Para mostrar contexto anterior al máximo sin alterar el origen del análisis de supervivencia.
+terraria_2020 <- steam_clean |>
+  filter(appid == "105600", month_date >= as.Date("2020-01-01"),
+         month_date <= as.Date("2020-12-01")) |>
+  arrange(month_date)
+terraria_abril <- terraria_2020$avg_players[terraria_2020$month_date == as.Date("2020-04-01")]
+if (length(terraria_abril) != 1L) stop("Falta abril de 2020 para contextualizar el pico de Terraria.")
 
 # Utilidades de formato: las cifras del texto se calculan con los datos de cada ejecución.
 fmt <- function(x, digits = 1) formatC(x, format = "f", digits = digits, big.mark = ".", decimal.mark = ",")
@@ -184,9 +201,9 @@ Describir la popularidad máxima y comparar, sin ajuste, la persistencia hasta u
 
 # Datos
 
-Se integraron los archivos locales *steamcharts.csv* (promedio y pico mensual de jugadores concurrentes) y *games_march2025_cleaned.csv* (identificador, precio observado, año de lanzamiento, categorías, género y logros). La unión por `appid` identificó `r fmt(n_coinciden, 0)` juegos en ambas fuentes. El último mes del panel es `r format(fecha_corte, '%Y-%m-%d')`; el nombre del catálogo indica marzo de 2025, pero su fecha efectiva de extracción debe verificarse con su proveedor. El precio cero se usa como indicador aproximado de acceso gratuito en esa fotografía, no como precio de lanzamiento.
+Se integraron los archivos *steamcharts.csv* (promedio y pico mensual de jugadores concurrentes) y *games_march2025_cleaned.csv* (precio observado, lanzamiento, categorías, género y logros). Sus páginas de Kaggle corresponden a Laputsky (s. f.) y Ermilov et al. (2025), respectivamente. El panel mensual coincide con una descripción externa en filas y variables, pero no se dispone de una huella digital para confirmar que la copia local sea idéntica. La unión por `appid` identificó `r fmt(n_coinciden, 0)` juegos. El último mes del panel es `r format(fecha_corte, '%Y-%m-%d')`; el catálogo corresponde a marzo de 2025. El precio cero aproxima el acceso gratuito en esa fotografía, no el precio de lanzamiento.
 
-Se conservaron registros válidos posteriores al lanzamiento y títulos con al menos doce meses observados: `r fmt(nrow(game_level), 0)` juegos. De ellos, `r fmt(nrow(game_level) - nrow(survival_data), 0)` se excluyeron por tener menos de tres meses entre su máximo y el final observado; la cohorte de supervivencia contiene `r fmt(nrow(survival_data), 0)` juegos.
+Se conservaron registros válidos posteriores al lanzamiento y títulos con al menos doce meses observados: `r fmt(nrow(game_level), 0)` juegos. De ellos, `r fmt(nrow(game_level) - nrow(survival_data), 0)` se excluyeron por tener menos de tres meses entre su máximo y el final observado; la cohorte de supervivencia contiene `r fmt(nrow(survival_data), 0)` juegos. La concurrencia no mide jugadores únicos, ventas ni actividad fuera de Steam.
 
 # Metodología
 
@@ -232,6 +249,20 @@ ggplot(km_tabla, aes(tiempo, supervivencia, color = grupo)) +
   labs(x = "Meses desde el máximo", y = "Probabilidad de no declive")
 ```
 
+\clearpage
+
+La tabla 1 complementa las curvas con intervalos de confianza puntuales del 95% y el número de juegos en riesgo justo antes de cada mes. Los intervalos expresan incertidumbre estadística bajo los supuestos del método; no corrigen sesgos de selección o censura ni son una probabilidad de que cada juego individual sobreviva. A los 36 meses quedan pocos juegos F2P en riesgo, por lo que el tramo tardío requiere cautela. Los intervalos de cada grupo no son, por sí solos, una prueba de la diferencia entre grupos.
+
+```{r}
+#| label: tbl-incertidumbre
+#| tbl-cap: "Kaplan–Meier por acceso: estimación puntual, IC del 95% y juegos en riesgo. Fuente: elaboración propia."
+tabla_km |>
+  transmute(Acceso = acceso, `Mes` = mes, `En riesgo` = en_riesgo,
+    `Sin declive` = pct(estimacion),
+    `IC 95%` = paste0(pct(inferior), "–", pct(superior))) |>
+  knitr::kable(booktabs = TRUE, align = c("l", "r", "r", "r", "c"))
+```
+
 ## Estudios de caso: Crush Crush y Terraria
 
 La regla selecciona *Crush Crush* (`r casos$appid[1]`) y *Terraria* (`r casos$appid[2]`); el umbral del percentil 80 es `r fmt(umbral_casos)` jugadores promedio. El catálogo clasifica al primero como gratuito y Casual, sin indicador multijugador, con `r casos$achievements[1]` logros; al segundo, de pago y Action, multijugador, con `r casos$achievements[2]` logros. Son características de la captura, no necesariamente las disponibles en el momento del máximo.
@@ -242,6 +273,7 @@ En los datos, *Crush Crush* alcanzó `r fmt(casos$historical_max_avg[1])` jugado
 #| label: fig-casos
 #| fig-cap: "Trayectorias desde el máximo propio: línea discontinua, umbral de 60%; punto, confirmación del evento. Fuente: SteamCharts y elaboración propia."
 #| fig-height: 2.8
+#| fig-pos: H
 ggplot(casos_panel, aes(meses, retention_ratio, color = game_name_chart)) +
   geom_hline(yintercept = 0.6, linetype = "dashed", color = "#777777") +
   geom_line(linewidth = 0.8) +
@@ -251,31 +283,62 @@ ggplot(casos_panel, aes(meses, retention_ratio, color = game_name_chart)) +
   labs(x = "Meses desde el máximo propio", y = "Actividad / máximo")
 ```
 
-Según las fichas oficiales, *Crush Crush* es un simulador de citas incremental e individual; *Terraria* combina exploración, construcción y combate, y admite multijugador (Sad Panda Studios, s. f.; Re-Logic, s. f.). Como hipótesis, la progresión del primero podría relacionarse con competencia, mientras la construcción y el juego compartido del segundo podrían ofrecer autonomía y vínculo social, conceptos propuestos por Przybylski et al. (2010). Yee (2006) distingue logro, dimensión social e inmersión en jugadores de MMORPG; trasladar ese marco a estos dos juegos requiere cautela. Ni las series ni las fichas miden motivaciones, público objetivo, identidad o retención individual: no permiten verificar esas hipótesis ni atribuir las trayectorias a las mecánicas.
+Según su ficha actual, *Crush Crush* combina citas y progresión incremental, permite avanzar mientras no se interactúa y ofrece compras opcionales; el desarrollador advierte contenido sexual o para público adulto (Sad Panda Studios, s. f.). El catálogo del estudio lo clasifica como gratuito e individual. *Terraria* combina exploración, construcción y combate, con modalidades individual y multijugador (Re-Logic, s. f.). Como referencia de contenido, la ESRB asigna a su versión de Nintendo Switch la clasificación Teen: es una valoración de esa plataforma, no una medición de edad de sus jugadores en Steam (ESRB, s. f.). Las fichas actuales describen productos que pueden haber cambiado desde 2020.
 
-La ficha actual de Steam indica para *Crush Crush* lanzamiento el 13 de mayo de 2016, mientras el CSV registra 18 de octubre de 2016. Debe verificarse cuál fecha corresponde al periodo de acceso o publicación antes de corregir el filtro; el análisis conserva el dato del CSV.
+Las diferencias entre experiencias permiten formular hipótesis, no explicar causalmente las curvas. Por ejemplo, la progresión incremental podría favorecer visitas repetidas a *Crush Crush*, mientras que la construcción y cooperación podrían favorecer formas diversas de participación en *Terraria*. Przybylski et al. (2010) proponen estudiar la participación mediante experiencias de competencia, autonomía y relación social; ni esa teoría ni los datos agregados prueban que dichas motivaciones produjeran estas trayectorias. Un programa abierto también puede figurar como actividad concurrente: no se observan sesiones activas, retención individual ni características demográficas.
+
+### El máximo de Terraria y Journey's End
+
+El promedio mensual de *Terraria* aumentó de `r fmt(terraria_abril)` en abril a `r fmt(casos$historical_max_avg[2])` jugadores concurrentes en mayo de 2020, el máximo de la serie analizada (figura 4). El 16 de mayo Re-Logic lanzó la actualización 1.4, *Journey's End*; dos días antes la había presentado como su última gran actualización de contenido (Re-Logic, 2020a). La coincidencia temporal respalda la hipótesis de que el lanzamiento pudo contribuir al aumento. Sin embargo, un promedio mensual no identifica qué parte ocurrió después del día 16 ni separa el efecto de otros factores. Además, el calificativo de «última» describe el plan anunciado entonces: hubo actualizaciones posteriores, incluida la versión 1.4.1 (Re-Logic, 2020b).
+
+```{r}
+#| label: fig-terraria-2020
+#| fig-cap: "Terraria en 2020: promedio de concurrentes por mes; línea discontinua, mes del lanzamiento de Journey's End. Fuente: SteamCharts y Re-Logic (2020a)."
+#| fig-height: 2.1
+#| fig-pos: H
+ggplot(terraria_2020, aes(month_date, avg_players)) +
+  geom_line(color = "#167C80", linewidth = 0.8) +
+  geom_point(color = "#167C80", size = 1.5) +
+  # Cada punto resume un mes completo; se marca mayo, no un cambio diario.
+  geom_vline(xintercept = as.numeric(as.Date("2020-05-01")), linetype = "dashed", color = "#777777") +
+  scale_x_date(date_breaks = "2 months", date_labels = "%m/%Y") +
+  scale_y_continuous(labels = scales::label_number(scale_cut = scales::cut_short_scale())) +
+  labs(x = "Mes de 2020", y = "Jugadores promedio")
+```
 
 # Conclusiones
 
 La cohorte muestra una distribución muy desigual de popularidad máxima. Las curvas de Kaplan–Meier describen la persistencia por acceso y la prueba log-rank aporta evidencia de una diferencia global no ajustada, sin precisar que un grupo mantenga una ventaja durante todo el seguimiento. Crush Crush y Terraria ilustran trayectorias relativas contrastantes, seleccionadas deliberadamente y no representativas de todos los juegos. Estas comparaciones dependen de la cohorte y del umbral; no demuestran causalidad. La cobertura selectiva de SteamCharts, la posible censura informativa, los meses faltantes y la exclusión de seguimiento corto limitan su interpretación. No se ajustó por género, antigüedad ni otras características, y se desconocen presupuesto, promociones, cambios de contenido y público real.
 
-\newpage
+\clearpage
 
 # Bibliografía
+
+Ermilov, A., y colaboradores. (2025). *Steam Games Dataset 2025* (versión 2; archivo `games_march2025_cleaned.csv`) [Conjunto de datos]. Kaggle.  
+https://www.kaggle.com/datasets/artermiloff/steam-games-dataset/versions/2
+
+Entertainment Software Rating Board. (s. f.). *Terraria: Nintendo Switch* [Clasificación de contenido].  
+https://www.esrb.org/ratings/36185/terraria/
 
 Kaplan, E. L., & Meier, P. (1958). Nonparametric estimation from incomplete observations. *Journal of the American Statistical Association, 53*(282), 457–481.  
 https://doi.org/10.1080/01621459.1958.10501452
 
+Laputsky, V. (s. f.). *Steam Monthly Average Players* [Conjunto de datos]. Kaggle.  
+https://www.kaggle.com/datasets/lunthu/steam-monthly-average-players
+
 Przybylski, A. K., Rigby, C. S., & Ryan, R. M. (2010). A motivational model of video game engagement. *Review of General Psychology, 14*(2), 154–166.  
 https://doi.org/10.1037/a0019440
 
-Yee, N. (2006). Motivations for play in online games. *CyberPsychology & Behavior, 9*(6), 772–775.  
-https://doi.org/10.1089/cpb.2006.9.772
+Re-Logic. (2020a, 14 y 16 de mayo). *Terraria: Journey's End Changelog* y *Journey's End Out Now!* [Anuncios oficiales en Steam].  
+[Consultar anuncios de mayo de 2020](https://store.steampowered.com/oldnews/?appgroupname=Terraria&appids=105600&enddate=1604214000&feed=steam_community_announcements)
 
-Sad Panda Studios. (s. f.). *Crush Crush* [Ficha de Steam].  
-https://store.steampowered.com/app/459820/Crush_Crush/
+Re-Logic. (2020b, 13 de octubre). *Terraria 1.4.1: Rounding Out the Journey* [Anuncio oficial en Steam].  
+[Consultar anuncio de la versión 1.4.1](https://store.steampowered.com/news/posts/?appids=105600&enddate=1617026199&feed=steam_community_announcements)
 
 Re-Logic. (s. f.). *Terraria* [Ficha de Steam].  
 https://store.steampowered.com/app/105600/Terraria/
 
-Fuentes de datos: archivos `steamcharts.csv` y `games_march2025_cleaned.csv`, copias locales empleadas en el análisis. **Pendiente:** registrar autor, URL original, fecha de descarga y licencia de cada dataset para completar su referencia APA y verificar su procedencia.
+Sad Panda Studios. (s. f.). *Crush Crush* [Ficha de Steam].  
+https://store.steampowered.com/app/459820/Crush_Crush/
+
+**Pendiente de procedencia:** confirmar fechas de descarga y versión exacta del panel mensual; la coincidencia de nombre, cobertura, filas y variables respalda la referencia, pero no establece identidad binaria con la copia local.
