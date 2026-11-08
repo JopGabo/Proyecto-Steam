@@ -186,7 +186,7 @@ Describir la popularidad máxima y comparar, sin ajuste, la persistencia hasta u
 
 Se integraron los archivos locales *steamcharts.csv* (promedio y pico mensual de jugadores concurrentes) y *games_march2025_cleaned.csv* (identificador, precio observado, año de lanzamiento, categorías, género y logros). La unión por `appid` identificó `r fmt(n_coinciden, 0)` juegos en ambas fuentes. El último mes del panel es `r format(fecha_corte, '%Y-%m-%d')`; el nombre del catálogo indica marzo de 2025, pero su fecha efectiva de extracción debe verificarse con su proveedor. El precio cero se usa como indicador aproximado de acceso gratuito en esa fotografía, no como precio de lanzamiento.
 
-Se conservaron registros válidos posteriores al lanzamiento y títulos con al menos doce meses observados: `r fmt(nrow(game_level), 0)` juegos. De ellos, `r fmt(nrow(game_level) - nrow(survival_data), 0)` se excluyeron por tener menos de tres meses entre su máximo y el final observado; la cohorte de supervivencia contiene `r fmt(nrow(survival_data), 0)` juegos. Esta selección puede favorecer títulos con mayor seguimiento tras su máximo. Los conteos miden concurrencia en Steam, no jugadores únicos, ventas ni actividad fuera de la plataforma.
+Se conservaron registros válidos posteriores al lanzamiento y títulos con al menos doce meses observados: `r fmt(nrow(game_level), 0)` juegos. De ellos, `r fmt(nrow(game_level) - nrow(survival_data), 0)` se excluyeron por tener menos de tres meses entre su máximo y el final observado; la cohorte de supervivencia contiene `r fmt(nrow(survival_data), 0)` juegos.
 
 # Metodología
 
