@@ -1,0 +1,278 @@
+---
+title: "Persistencia de popularidad de videojuegos en Steam"
+author: "Gabriel Jop Baltodano"
+lang: es
+# El entorno actual no dispone de patrones de separación silábica en español.
+babel-lang: false
+fontsize: 12pt
+documentclass: article
+geometry: margin=2.3cm
+header-includes:
+  - '\renewcommand{\figurename}{Figura}'
+  - '\renewcommand{\tablename}{Tabla}'
+format:
+  pdf:
+    pdf-engine: xelatex
+    number-sections: false
+    colorlinks: true
+    fig-pos: H
+    fig-width: 7
+    fig-height: 3.5
+execute:
+  echo: false
+  warning: false
+  message: false
+  freeze: false
+---
+
+```{r}
+# Informe individual: integración, cohorte y supervivencia de popularidad.
+# Requiere tidyverse y survival; ejecutar desde la carpeta de este QMD.
+library(tidyverse)
+library(survival)
+
+# Para el repositorio, colocar este QMD en cod/ y los CSV en data/.
+# La segunda opción permite ejecutar esta copia de trabajo sin modificar el repositorio.
+rutas_datos <- c("../data", "../Proyecto personalGIT/ProyectoHerr/data")
+directorio_datos <- rutas_datos[vapply(rutas_datos, function(ruta) {
+  all(file.exists(file.path(ruta, c("steamcharts.csv", "games_march2025_cleaned.csv"))))
+}, logical(1))][1]
+if (is.na(directorio_datos)) stop("No se encontraron ambos CSV. Ajusta rutas_datos en el QMD.")
+
+# Se conserva la selección y limpieza del avance previo; las fechas del panel son mensuales.
+columnas_games_necesarias <- c(
+  "appid", "name", "release_date", "required_age", "price", "dlc_count",
+  "windows", "mac", "linux", "metacritic_score", "achievements",
+  "recommendations", "developers", "publishers", "categories", "genres",
+  "tags", "positive", "negative", "estimated_owners",
+  "average_playtime_forever", "average_playtime_2weeks", "median_playtime_forever",
+  "median_playtime_2weeks", "peak_ccu", "pct_pos_total", "num_reviews_total",
+  "pct_pos_recent", "num_reviews_recent"
+)
+steam_raw <- readr::read_csv(file.path(directorio_datos, "steamcharts.csv"), show_col_types = FALSE)
+games_raw <- readr::read_csv(file.path(directorio_datos, "games_march2025_cleaned.csv"),
+                             col_select = all_of(columnas_games_necesarias), show_col_types = FALSE)
+fechas_steam <- steam_raw |>
+  mutate(month_date = readr::parse_date(paste("01", month), format = "%d %b-%y",
+                                       locale = readr::locale(date_names = "en")))
+fecha_corte <- max(fechas_steam$month_date, na.rm = TRUE)
+
+steam_clean <- fechas_steam |>
+  transmute(appid = as.character(steam_appid), game_name_chart = str_squish(name),
+            month_date, avg_players = as.numeric(avg_players),
+            peak_players = as.numeric(peak_players),
+            gain = readr::parse_number(as.character(gain), na = c("", "-")),
+            gain_percent = as.numeric(gain_percent)) |>
+  filter(!is.na(appid), appid != "", !is.na(month_date), !is.na(avg_players),
+         avg_players >= 0, is.na(peak_players) | peak_players >= 0,
+         is.na(peak_players) | avg_players <= peak_players) |>
+  distinct(appid, month_date, .keep_all = TRUE)
+
+games_clean <- games_raw |>
+  transmute(appid = as.character(appid), game_name_store = str_squish(name),
+    release_date = as.Date(release_date), required_age = as.numeric(required_age),
+    price = as.numeric(price), dlc_count = as.numeric(dlc_count),
+    windows = as.logical(windows), mac = as.logical(mac), linux = as.logical(linux),
+    metacritic_score = as.numeric(metacritic_score), achievements = as.numeric(achievements),
+    recommendations = as.numeric(recommendations), developers, publishers,
+    categories = coalesce(categories, "[]"), genres = coalesce(genres, "[]"),
+    tags = coalesce(tags, "[]"), positive = as.numeric(positive), negative = as.numeric(negative),
+    estimated_owners, average_playtime_forever = as.numeric(average_playtime_forever),
+    average_playtime_2weeks = as.numeric(average_playtime_2weeks),
+    median_playtime_forever = as.numeric(median_playtime_forever),
+    median_playtime_2weeks = as.numeric(median_playtime_2weeks),
+    peak_ccu_snapshot = as.numeric(peak_ccu), pct_pos_total = as.numeric(pct_pos_total),
+    num_reviews_total = as.numeric(num_reviews_total), pct_pos_recent = as.numeric(pct_pos_recent),
+    num_reviews_recent = as.numeric(num_reviews_recent)) |>
+  filter(!is.na(appid), appid != "", !is.na(game_name_store), game_name_store != "",
+         !is.na(release_date), release_date <= fecha_corte, !is.na(price), price >= 0) |>
+  distinct(appid, .keep_all = TRUE) |>
+  mutate(f2p = price == 0, f2p_label = if_else(f2p, "Free-to-Play", "De pago"),
+    genre_text = genres |> str_remove_all("\\[|\\]|'") |> str_squish(),
+    genre_primary = if_else(genre_text == "", "No especificado", str_trim(str_extract(genre_text, "^[^,]+"))),
+    multiplayer = str_detect(str_to_lower(paste(categories, tags)),
+      "multi-player|multiplayer|online pvp|online co-op|shared/split screen"),
+    multiplayer_label = if_else(multiplayer, "Multijugador", "Sin indicador multijugador"),
+    windows = coalesce(windows, FALSE), mac = coalesce(mac, FALSE), linux = coalesce(linux, FALSE),
+    platform_count = as.integer(windows) + as.integer(mac) + as.integer(linux),
+    reviews_total = if_else(!is.na(positive) & !is.na(negative), positive + negative, NA_real_),
+    negative_share = if_else(reviews_total > 0, negative / reviews_total, NA_real_),
+    release_year = as.integer(format(release_date, "%Y")))
+
+# Unión uno-a-muchos por appid; se exige historial posterior al lanzamiento.
+ids_steam <- distinct(steam_clean, appid)
+ids_games <- distinct(games_clean, appid)
+n_coinciden <- nrow(inner_join(ids_steam, ids_games, by = "appid"))
+panel_unido <- inner_join(steam_clean, games_clean, by = "appid")
+panel_post <- panel_unido |> filter(month_date >= release_date)
+juegos_elegibles <- panel_post |> count(appid, name = "n_meses") |> filter(n_meses >= 12L)
+panel_analisis <- inner_join(panel_post, juegos_elegibles, by = "appid")
+
+# El evento se confirma al tercer mes consecutivo bajo el 60% del máximo observado.
+panel_retencion <- panel_analisis |>
+  group_by(appid) |> arrange(month_date, .by_group = TRUE) |>
+  mutate(month_index = as.integer(format(month_date, "%Y")) * 12L + as.integer(format(month_date, "%m")),
+         historical_max_avg = max(avg_players, na.rm = TRUE),
+         peak_month = min(month_date[avg_players == historical_max_avg]),
+         retention_ratio = avg_players / historical_max_avg,
+         after_peak = month_date >= peak_month,
+         below_threshold = after_peak & retention_ratio < 0.60,
+         month_gap = month_index - lag(month_index),
+         decline_event = below_threshold & lag(below_threshold, default = FALSE) &
+           lag(below_threshold, n = 2L, default = FALSE) & month_gap == 1L & lag(month_gap) == 1L) |>
+  ungroup()
+trayectoria <- panel_retencion |> group_by(appid) |>
+  summarise(historical_max_avg = first(historical_max_avg), peak_month = first(peak_month),
+    last_observed_month = max(month_date),
+    event_month = if (any(decline_event, na.rm = TRUE)) min(month_date[decline_event]) else as.Date(NA),
+    event_observed = any(decline_event, na.rm = TRUE), n_meses_observados = n_distinct(month_date),
+    .groups = "drop") |>
+  mutate(end_month = if_else(event_observed, event_month, last_observed_month),
+    peak_index = as.integer(format(peak_month, "%Y")) * 12L + as.integer(format(peak_month, "%m")),
+    end_index = as.integer(format(end_month, "%Y")) * 12L + as.integer(format(end_month, "%m")),
+    duration_months = end_index - peak_index)
+caracteristicas <- panel_analisis |> arrange(appid, month_date) |> group_by(appid) |>
+  slice(1) |> ungroup() |>
+  select(appid, game_name_store, release_year, f2p, f2p_label, multiplayer,
+         multiplayer_label, genre_primary, achievements)
+game_level <- inner_join(caracteristicas, trayectoria, by = "appid")
+survival_data <- game_level |> filter(duration_months >= 3L)
+
+# Cox estratificado según la revisión de Schoenfeld documentada en el avance.
+cox_base <- survival_data |> filter(!is.na(f2p_label), !is.na(multiplayer_label),
+  !is.na(genre_primary), !is.na(release_year), !is.na(achievements))
+generos_cox <- cox_base |> count(genre_primary, sort = TRUE) |> slice_head(n = 5L) |> pull(genre_primary)
+cox_base <- cox_base |> mutate(genre_cox = if_else(genre_primary %in% generos_cox, genre_primary, "Otros"))
+cox_inicial <- coxph(Surv(duration_months, event_observed) ~ f2p_label + multiplayer_label +
+  genre_cox + release_year + log1p(achievements), data = cox_base, ties = "efron")
+ph_inicial <- cox.zph(cox_inicial, transform = "identity")
+cox_final <- coxph(Surv(duration_months, event_observed) ~ release_year + log1p(achievements) +
+  strata(f2p_label, multiplayer_label, genre_cox), data = cox_base, ties = "efron")
+ph_final <- cox.zph(cox_final, transform = "identity")
+cox_resumen <- summary(cox_final)
+km <- survfit(Surv(duration_months, event_observed) ~ f2p_label, data = survival_data)
+logrank <- survdiff(Surv(duration_months, event_observed) ~ f2p_label, data = survival_data)
+logrank_multi <- survdiff(Surv(duration_months, event_observed) ~ multiplayer_label, data = survival_data)
+km_12 <- summary(km, times = 12)$surv
+names(km_12) <- sub("f2p_label=", "", summary(km, times = 12)$strata)
+
+# Regla automática: popularidad superior al percentil 80 e historial de 24+ meses.
+umbral_casos <- quantile(survival_data$historical_max_avg, 0.8, na.rm = TRUE, names = FALSE)
+candidatos <- survival_data |> filter(historical_max_avg >= umbral_casos, n_meses_observados >= 24L)
+caso_f2p <- candidatos |> filter(f2p) |>
+  arrange(desc(!event_observed), desc(duration_months), desc(historical_max_avg), appid) |> slice_head(n = 1)
+caso_pago <- candidatos |> filter(!f2p, event_observed) |>
+  arrange(duration_months, desc(historical_max_avg), appid) |> slice_head(n = 1)
+if (nrow(caso_f2p) != 1L || nrow(caso_pago) != 1L) stop("La regla no encontró dos perfiles de casos.")
+casos <- bind_rows(caso_f2p, caso_pago)
+
+# Utilidades de formato: las cifras del texto se calculan con los datos de cada ejecución.
+fmt <- function(x, digits = 1) formatC(x, format = "f", digits = digits, big.mark = ".", decimal.mark = ",")
+pct <- function(x, digits = 1) paste0(fmt(100 * x, digits), "%")
+pval <- function(x) if (x < 0.001) "< 0,001" else paste0("= ", fmt(x, 3))
+theme_set(theme_minimal(base_size = 12) + theme(panel.grid.minor = element_blank(),
+  panel.grid.major.x = element_blank(), legend.position = "top", legend.title = element_blank(),
+  plot.title = element_text(face = "bold")))
+```
+
+# Introducción
+
+La atención de los jugadores puede concentrarse en el lanzamiento de un videojuego o mantenerse durante años. Distinguir ambos comportamientos ayuda a describir el ciclo de vida de los productos digitales. Este trabajo combina series mensuales de SteamCharts y características de Steam para estudiar la duración de su popularidad observable. En `r fmt(nrow(survival_data), 0)` juegos, la probabilidad estimada de seguir sin declive a los 12 meses fue `r pct(km_12[['Free-to-Play']])` para gratuitos y `r pct(km_12[['De pago']])` para juegos de pago. La comparación es descriptiva y no implica causalidad.
+
+# Objetivo
+
+Describir la popularidad máxima y estimar el tiempo hasta una pérdida sostenida de popularidad en Steam, comparando juegos gratuitos y de pago, y evaluando su asociación con características observadas del producto.
+
+# Datos
+
+Se integraron los archivos locales *steamcharts.csv* (promedio y pico mensual de jugadores concurrentes) y *games_march2025_cleaned.csv* (identificador, precio observado, año de lanzamiento, categorías, género y logros). La unión por `appid` identificó `r fmt(n_coinciden, 0)` juegos en ambas fuentes. El último mes del panel es `r format(fecha_corte, '%Y-%m-%d')`; el nombre del catálogo indica marzo de 2025, pero su fecha efectiva de extracción debe verificarse con su proveedor. El precio cero se usa como indicador aproximado de acceso gratuito en esa fotografía, no como precio de lanzamiento.
+
+Se conservaron registros válidos posteriores al lanzamiento y títulos con al menos doce meses observados: `r fmt(nrow(game_level), 0)` juegos. De ellos, `r fmt(nrow(game_level) - nrow(survival_data), 0)` se excluyeron por tener menos de tres meses entre su máximo y el final observado; la cohorte de supervivencia contiene `r fmt(nrow(survival_data), 0)` juegos. Esta selección puede favorecer títulos con mayor seguimiento tras su máximo. Los conteos miden concurrencia en Steam, no jugadores únicos, ventas ni actividad fuera de la plataforma.
+
+# Metodología
+
+El máximo histórico observado es el mayor promedio mensual de jugadores concurrentes de cada juego. Desde el primer mes de ese máximo se mide el tiempo, en meses, hasta la **primera racha de tres meses consecutivos** con actividad inferior al 60% del máximo; el evento se fecha al confirmarse el tercer mes. Si no se observa, el seguimiento se censura en el último mes disponible. Los registros faltantes interrumpen la racha, pero no implican actividad cero.
+
+Kaplan y Meier (1958) permiten describir la probabilidad de no haber experimentado el evento y la prueba log-rank compara curvas sin ajuste. Se estimó además una regresión de Cox (1972) con empates de Efron: acceso, indicador multijugador y género principal definen estratos de riesgo basal; año de lanzamiento y log(1 + logros) tienen coeficientes comunes. Se consideraron cinco géneros frecuentes y una categoría «Otros». En el modelo diagnóstico inicial, Schoenfeld (1982) señaló falta de proporcionalidad en acceso, multijugador y género; por ello se estratificaron. Un HR mayor que 1 indica mayor tasa asociada de declive entre juegos del mismo estrato. La transformación de logros atenúa la asimetría y admite cero.
+
+La interpretación presupone censura no informativa condicionada a los grupos o covariables y una forma aproximadamente lineal para año y log(1 + logros); estas condiciones no se garantizan con los datos disponibles. El máximo se determina con la trayectoria completa observada, de modo que el origen se conoce retrospectivamente y las estimaciones describen el periodo posterior a ese máximo observado, no una predicción disponible al lanzamiento.
+
+# Resultados
+
+## Composición y popularidad
+
+En la cohorte, `r pct(mean(survival_data$f2p))` de los juegos eran gratuitos según el precio observado y `r pct(mean(survival_data$multiplayer))` tenían indicador multijugador. La mediana del máximo histórico fue `r fmt(median(survival_data$historical_max_avg))` jugadores concurrentes promedio y el percentil 90 fue `r fmt(quantile(survival_data$historical_max_avg, 0.9))`; la cola larga justifica la escala logarítmica de la figura 1.
+
+```{r}
+#| label: fig-popularidad
+#| fig-cap: "Distribución del máximo de jugadores promedio por juego. Fuente: elaboración propia con SteamCharts y catálogo de Steam."
+#| fig-height: 3.2
+ggplot(survival_data |> filter(historical_max_avg > 0), aes(historical_max_avg)) +
+  geom_histogram(bins = 40, fill = "#167C80", color = "white") +
+  scale_x_log10(labels = scales::label_number()) +
+  labs(x = "Máximo de jugadores promedio (escala logarítmica)", y = "Videojuegos")
+```
+
+## Persistencia y comparación sin ajuste
+
+Se observaron `r fmt(sum(survival_data$event_observed), 0)` eventos y `r fmt(sum(!survival_data$event_observed), 0)` censuras (`r pct(mean(!survival_data$event_observed))`). La mediana del tiempo observado hasta evento o censura fue de `r median(survival_data$duration_months)` meses; no equivale a la mediana de supervivencia estimada. A los 12 meses desde el máximo, Kaplan–Meier estima que `r pct(km_12[['Free-to-Play']])` de los gratuitos y `r pct(km_12[['De pago']])` de los de pago aún no habían presentado el evento (figura 2). El log-rank de acceso dio $\chi^2$ = `r fmt(logrank$chisq, 2)` (1 gl; p `r pval(pchisq(logrank$chisq, 1, lower.tail = FALSE))`); para multijugador, $\chi^2$ = `r fmt(logrank_multi$chisq, 2)` (1 gl; p `r pval(pchisq(logrank_multi$chisq, 1, lower.tail = FALSE))`). Son contrastes globales no ajustados.
+
+```{r}
+#| label: fig-km
+#| fig-cap: "Kaplan–Meier según acceso; cruces: censuras. Fuente: elaboración propia con SteamCharts y catálogo de Steam."
+#| fig-height: 3.5
+km_tabla <- tibble(tiempo = km$time, supervivencia = km$surv, censuras = km$n.censor,
+                   grupo = sub("f2p_label=", "", rep(names(km$strata), km$strata)))
+km_tabla <- bind_rows(km_tabla, distinct(km_tabla, grupo) |>
+  mutate(tiempo = 0, supervivencia = 1, censuras = 0)) |> arrange(grupo, tiempo)
+ggplot(km_tabla, aes(tiempo, supervivencia, color = grupo)) +
+  geom_step(linewidth = 0.8) +
+  geom_point(data = filter(km_tabla, censuras > 0), shape = 3, size = 1.6) +
+  scale_color_manual(values = c("De pago" = "#666666", "Free-to-Play" = "#167C80")) +
+  scale_y_continuous(labels = scales::label_percent(), limits = c(0, 1)) +
+  labs(x = "Meses desde el máximo", y = "Probabilidad de no declive")
+```
+
+## Asociaciones ajustadas
+
+El Cox estratificado incluye `r fmt(nrow(cox_base), 0)` juegos y `r fmt(sum(cox_base$event_observed), 0)` eventos. La tabla 1 presenta asociaciones dentro de los estratos de acceso, multijugador y género. Por cada año adicional de lanzamiento, el HR estimado fue `r fmt(cox_resumen$conf.int[1, 'exp(coef)'], 3)` (IC95%: `r fmt(cox_resumen$conf.int[1, 'lower .95'], 3)`–`r fmt(cox_resumen$conf.int[1, 'upper .95'], 3)`). Por una unidad adicional en log(1 + logros), el HR fue `r fmt(cox_resumen$conf.int[2, 'exp(coef)'], 3)` (IC95%: `r fmt(cox_resumen$conf.int[2, 'lower .95'], 3)`–`r fmt(cox_resumen$conf.int[2, 'upper .95'], 3)`). Una unidad logarítmica implica multiplicar por *e* la cantidad «1 + logros», no añadir un logro.
+
+```{r}
+#| label: tbl-cox
+#| tbl-cap: "Hazard ratios ajustados del Cox estratificado. Fuente: elaboración propia con ambos archivos."
+tabla_hr <- tibble(
+  Covariable = c("Año de lanzamiento: +1 año", "log(1 + logros): +1 unidad"),
+  HR = sprintf("%.3f", cox_resumen$conf.int[, "exp(coef)"]),
+  `IC 95%` = sprintf("%.3f–%.3f", cox_resumen$conf.int[, "lower .95"], cox_resumen$conf.int[, "upper .95"]),
+  `Valor p` = ifelse(cox_resumen$coefficients[, "Pr(>|z|)"] < .001, "< 0.001",
+                    sprintf("%.3f", cox_resumen$coefficients[, "Pr(>|z|)"]))
+)
+knitr::kable(tabla_hr, booktabs = TRUE, align = c("l", "r", "c", "r"))
+```
+
+La prueba global de Schoenfeld del modelo final dio p `r pval(ph_final$table['GLOBAL', 'p'])`; para año, p `r pval(ph_final$table['release_year', 'p'])`, y para logros, p `r pval(ph_final$table['log1p(achievements)', 'p'])`. Estos resultados no prueban proporcionalidad: sólo indican que la prueba no detectó una desviación concluyente. No se estima un HR único para acceso, multijugador o género porque se usaron como estratos.
+
+\newpage
+
+## Casos para una etapa posterior
+
+Una regla programada exige máximo histórico dentro del 20% superior y 24 meses de historial. Entre los elegibles elige el F2P con más persistencia, priorizando censura, y el juego de pago con evento más temprano. Se seleccionaron *`r casos$game_name_store[1]`* (`r casos$appid[1]`; `r fmt(casos$historical_max_avg[1])` jugadores; `r casos$duration_months[1]` meses, `r ifelse(casos$event_observed[1], 'evento', 'censura')`) y *`r casos$game_name_store[2]`* (`r casos$appid[2]`; `r fmt(casos$historical_max_avg[2])` jugadores; `r casos$duration_months[2]` meses, evento). Son perfiles contrastantes elegidos para una futura investigación, no una muestra representativa ni una identificación de su demografía.
+
+# Conclusiones
+
+La cohorte muestra una distribución muy desigual de popularidad máxima y una diferencia no ajustada entre las curvas según acceso. Dentro de los estratos de acceso, modalidad y género, un año de lanzamiento más reciente se asoció con una menor tasa de declive y la medida logarítmica de logros con una tasa mayor. Estas asociaciones dependen de la cohorte, del umbral y del modelo; no demuestran que una característica cause persistencia o declive. La cobertura selectiva de SteamCharts, el seguimiento y la censura potencialmente informativos, los meses faltantes, la exclusión de seguimiento corto y las covariables medidas en una fotografía posterior limitan su interpretación. No se observan presupuesto, promociones, cambios de contenido ni público real.
+
+\newpage
+
+# Bibliografía
+
+Cox, D. R. (1972). Regression models and life-tables. *Journal of the Royal Statistical Society: Series B (Methodological), 34*(2), 187–220.  
+https://doi.org/10.1111/j.2517-6161.1972.tb00899.x
+
+Kaplan, E. L., & Meier, P. (1958). Nonparametric estimation from incomplete observations. *Journal of the American Statistical Association, 53*(282), 457–481.  
+https://doi.org/10.1080/01621459.1958.10501452
+
+Schoenfeld, D. (1982). Partial residuals for the proportional hazards regression model. *Biometrika, 69*(1), 239–241.  
+https://doi.org/10.1093/biomet/69.1.239
+
+Fuentes de datos: archivos `steamcharts.csv` y `games_march2025_cleaned.csv`, copias locales empleadas en el análisis. **Pendiente:** registrar autor, URL original, fecha de descarga y licencia de cada dataset para completar su referencia APA y verificar su procedencia.
