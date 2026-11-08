@@ -15,7 +15,7 @@ format:
     pdf-engine: xelatex
     number-sections: false
     colorlinks: true
-    fig-pos: H
+    fig-pos: "!htbp"
     fig-width: 7
     fig-height: 3.5
 execute:
@@ -68,6 +68,8 @@ steam_clean <- fechas_steam |>
          is.na(peak_players) | avg_players <= peak_players) |>
   distinct(appid, month_date, .keep_all = TRUE)
 
+
+#Limpiando los datos y limpiando nombres de las columnas, poniendolo todo en tipo de dato deseado
 games_clean <- games_raw |>
   transmute(appid = as.character(appid), game_name_store = str_squish(name),
     release_date = as.Date(release_date), required_age = as.numeric(required_age),
@@ -121,6 +123,8 @@ panel_retencion <- panel_analisis |>
          decline_event = below_threshold & lag(below_threshold, default = FALSE) &
            lag(below_threshold, n = 2L, default = FALSE) & month_gap == 1L & lag(month_gap) == 1L) |>
   ungroup()
+
+
 trayectoria <- panel_retencion |> group_by(appid) |>
   summarise(historical_max_avg = first(historical_max_avg), peak_month = first(peak_month),
     last_observed_month = max(month_date),
@@ -131,6 +135,8 @@ trayectoria <- panel_retencion |> group_by(appid) |>
     peak_index = as.integer(format(peak_month, "%Y")) * 12L + as.integer(format(peak_month, "%m")),
     end_index = as.integer(format(end_month, "%Y")) * 12L + as.integer(format(end_month, "%m")),
     duration_months = end_index - peak_index)
+
+
 caracteristicas <- panel_analisis |> arrange(appid, month_date) |> group_by(appid) |>
   slice(1) |> ungroup() |>
   select(appid, game_name_store, release_year, f2p, f2p_label, multiplayer,
@@ -141,30 +147,59 @@ survival_data <- game_level |> filter(duration_months >= 3L)
 # Cox estratificado según la revisión de Schoenfeld documentada en el avance.
 cox_base <- survival_data |> filter(!is.na(f2p_label), !is.na(multiplayer_label),
   !is.na(genre_primary), !is.na(release_year), !is.na(achievements))
+
 generos_cox <- cox_base |> count(genre_primary, sort = TRUE) |> slice_head(n = 5L) |> pull(genre_primary)
+
+
 cox_base <- cox_base |> mutate(genre_cox = if_else(genre_primary %in% generos_cox, genre_primary, "Otros"))
+
 cox_inicial <- coxph(Surv(duration_months, event_observed) ~ f2p_label + multiplayer_label +
   genre_cox + release_year + log1p(achievements), data = cox_base, ties = "efron")
+
 ph_inicial <- cox.zph(cox_inicial, transform = "identity")
+
 cox_final <- coxph(Surv(duration_months, event_observed) ~ release_year + log1p(achievements) +
   strata(f2p_label, multiplayer_label, genre_cox), data = cox_base, ties = "efron")
+
 ph_final <- cox.zph(cox_final, transform = "identity")
+
 cox_resumen <- summary(cox_final)
+
 km <- survfit(Surv(duration_months, event_observed) ~ f2p_label, data = survival_data)
+
 logrank <- survdiff(Surv(duration_months, event_observed) ~ f2p_label, data = survival_data)
+
 logrank_multi <- survdiff(Surv(duration_months, event_observed) ~ multiplayer_label, data = survival_data)
+
 km_12 <- summary(km, times = 12)$surv
+
 names(km_12) <- sub("f2p_label=", "", summary(km, times = 12)$strata)
 
-# Regla automática: popularidad superior al percentil 80 e historial de 24+ meses.
+# Regla automática: popularidad superior al percentil 80 e historial de 24+ meses. (Para escoger los casos)
 umbral_casos <- quantile(survival_data$historical_max_avg, 0.8, na.rm = TRUE, names = FALSE)
+
 candidatos <- survival_data |> filter(historical_max_avg >= umbral_casos, n_meses_observados >= 24L)
+
 caso_f2p <- candidatos |> filter(f2p) |>
   arrange(desc(!event_observed), desc(duration_months), desc(historical_max_avg), appid) |> slice_head(n = 1)
+
 caso_pago <- candidatos |> filter(!f2p, event_observed) |>
   arrange(duration_months, desc(historical_max_avg), appid) |> slice_head(n = 1)
 if (nrow(caso_f2p) != 1L || nrow(caso_pago) != 1L) stop("La regla no encontró dos perfiles de casos.")
 casos <- bind_rows(caso_f2p, caso_pago)
+# Detener la generación de los casos narrados si los datos actualizados cambian la selección.
+if (!identical(casos$appid, c("459820", "105600"))) {
+  stop("La regla seleccionó otros juegos. Revisa los casos y actualiza el análisis documental; no cambies la regla silenciosamente.")
+}
+
+casos_panel <- panel_retencion |>
+  filter(appid %in% casos$appid, after_peak) |>
+  mutate(meses = month_index - (as.integer(format(peak_month, "%Y")) * 12L +
+    as.integer(format(peak_month, "%m")))) |>
+  left_join(casos |> select(appid, event_month, event_observed), by = "appid")
+
+fin_casos <- casos_panel |> group_by(appid) |> slice_max(month_date, n = 1, with_ties = FALSE) |>
+  ungroup() |> arrange(appid)
 
 # Utilidades de formato: las cifras del texto se calculan con los datos de cada ejecución.
 fmt <- function(x, digits = 1) formatC(x, format = "f", digits = digits, big.mark = ".", decimal.mark = ",")
@@ -177,7 +212,7 @@ theme_set(theme_minimal(base_size = 12) + theme(panel.grid.minor = element_blank
 
 # Introducción
 
-La atención de los jugadores puede concentrarse en el lanzamiento de un videojuego o mantenerse durante años. Distinguir ambos comportamientos ayuda a describir el ciclo de vida de los productos digitales. Este trabajo combina series mensuales de SteamCharts y características de Steam para estudiar la duración de su popularidad observable. En `r fmt(nrow(survival_data), 0)` juegos, la probabilidad estimada de seguir sin declive a los 12 meses fue `r pct(km_12[['Free-to-Play']])` para gratuitos y `r pct(km_12[['De pago']])` para juegos de pago. La comparación es descriptiva y no implica causalidad.
+Un juego puede alcanzar un gran público y perder actividad rápidamente, mientras otro conserva una comunidad activa durante años. Conocer estas trayectorias ayuda a describir el ciclo de vida de los videojuegos, pero el éxito inicial no garantiza una popularidad persistente. Aquí la **popularidad** es el promedio mensual de jugadores concurrentes en Steam y la **persistencia** es el tiempo transcurrido desde el mayor promedio observado hasta una caída sostenida respecto de ese máximo. Con series mensuales y características de producto, se comparan modalidades de acceso y se exploran asociaciones con el tiempo de declive. En `r fmt(nrow(survival_data), 0)` juegos, la probabilidad estimada de no haber declinado a los 12 meses fue `r pct(km_12[['Free-to-Play']])` para gratuitos y `r pct(km_12[['De pago']])` para juegos de pago; esta comparación no ajustada no demuestra causalidad.
 
 # Objetivo
 
@@ -191,11 +226,17 @@ Se conservaron registros válidos posteriores al lanzamiento y títulos con al m
 
 # Metodología
 
-El máximo histórico observado es el mayor promedio mensual de jugadores concurrentes de cada juego. Desde el primer mes de ese máximo se mide el tiempo, en meses, hasta la **primera racha de tres meses consecutivos** con actividad inferior al 60% del máximo; el evento se fecha al confirmarse el tercer mes. Si no se observa, el seguimiento se censura en el último mes disponible. Los registros faltantes interrumpen la racha, pero no implican actividad cero.
+Para medir cambios comparables entre juegos de distinto tamaño se toma el mayor promedio mensual **observado** como máximo propio y el primer mes de ese máximo como origen. El evento se confirma en el tercer mes de la primera racha de tres meses consecutivos con actividad inferior al 60% de ese máximo. Para juegos sin evento se registra censura en el último mes disponible: se conoce su seguimiento, no cuándo ocurrirá el declive. Los meses faltantes interrumpen la racha; un evento no detectado durante una brecha puede retrasar su detección.
 
-Kaplan y Meier (1958) permiten describir la probabilidad de no haber experimentado el evento y la prueba log-rank compara curvas sin ajuste. Se estimó además una regresión de Cox (1972) con empates de Efron: acceso, indicador multijugador y género principal definen estratos de riesgo basal; año de lanzamiento y log(1 + logros) tienen coeficientes comunes. Se consideraron cinco géneros frecuentes y una categoría «Otros». En el modelo diagnóstico inicial, Schoenfeld (1982) señaló falta de proporcionalidad en acceso, multijugador y género; por ello se estratificaron. Un HR mayor que 1 indica mayor tasa asociada de declive entre juegos del mismo estrato. La transformación de logros atenúa la asimetría y admite cero.
+Para estimar la proporción que aún no presenta el evento en cada mes se utiliza Kaplan–Meier, que incorpora observaciones censuradas (Kaplan & Meier, 1958). Para contrastar globalmente las curvas de acceso y, por separado, las de multijugador se utiliza log-rank; estas comparaciones son no ajustadas. Para estudiar asociaciones simultáneas con el riesgo de declive se utiliza Cox (1972). Dado que varios eventos pueden confirmarse en el mismo mes, Efron aproxima su contribución conjunta a la verosimilitud sin imponer un orden arbitrario dentro del mes.
 
-La interpretación presupone censura no informativa condicionada a los grupos o covariables y una forma aproximadamente lineal para año y log(1 + logros); estas condiciones no se garantizan con los datos disponibles. El máximo se determina con la trayectoria completa observada, de modo que el origen se conoce retrospectivamente y las estimaciones describen el periodo posterior a ese máximo observado, no una predicción disponible al lanzamiento.
+En el Cox inicial, la prueba de Schoenfeld señaló desviaciones de proporcionalidad para acceso (p `r pval(ph_inicial$table['f2p_label','p'])`), multijugador (p `r pval(ph_inicial$table['multiplayer_label','p'])`) y género (p `r pval(ph_inicial$table['genre_cox','p'])`). Como solución prudente se estratifica por su combinación; el género comprende los cinco más frecuentes y «Otros». No se afirma que la prueba por sí sola mida la magnitud práctica de la desviación. Cada estrato tiene su propio riesgo basal y año de lanzamiento y log(1 + logros) tienen efectos comunes:
+
+$$h_s(t\mid x)=h_{0s}(t)\exp\left[\beta_1\,\text{año}+\beta_2\log(1+\text{logros})\right].$$
+
+Aquí $t$ son meses desde el máximo, $s$ identifica el estrato y $h_{0s}(t)$ su riesgo basal; los coeficientes $\beta$ describen las asociaciones y $e^{\beta}$ es el *hazard ratio* (HR) por unidad, dentro de un mismo estrato. No se estima un HR único de acceso, multijugador ni género. La escala logarítmica del gráfico de máximos comprime visualmente la cola sin alterar los datos; en cambio, log(1 + logros) transforma una covariable del modelo, reduce su asimetría y admite ceros.
+
+La interpretación presupone censura no informativa, condicionalmente a los grupos o covariables, y forma aproximadamente lineal para los dos predictores; no se garantizan con estos datos. El máximo se determina retrospectivamente con toda la serie observada: el resultado no es una predicción disponible al lanzamiento. Para seleccionar casos contrastantes se exige estar en el 20% superior de máximos y contar con 24 meses observados; se escoge el F2P de mayor seguimiento, priorizando censura, y el juego de pago con evento más temprano. La regla muestra diferencias de trayectoria, no identifica sus causas ni representa a todos los juegos.
 
 # Resultados
 
@@ -206,7 +247,7 @@ En la cohorte, `r pct(mean(survival_data$f2p))` de los juegos eran gratuitos seg
 ```{r}
 #| label: fig-popularidad
 #| fig-cap: "Distribución del máximo de jugadores promedio por juego. Fuente: elaboración propia con SteamCharts y catálogo de Steam."
-#| fig-height: 3.2
+#| fig-height: 2.7
 ggplot(survival_data |> filter(historical_max_avg > 0), aes(historical_max_avg)) +
   geom_histogram(bins = 40, fill = "#167C80", color = "white") +
   scale_x_log10(labels = scales::label_number()) +
@@ -220,7 +261,7 @@ Se observaron `r fmt(sum(survival_data$event_observed), 0)` eventos y `r fmt(sum
 ```{r}
 #| label: fig-km
 #| fig-cap: "Kaplan–Meier según acceso; cruces: censuras. Fuente: elaboración propia con SteamCharts y catálogo de Steam."
-#| fig-height: 3.5
+#| fig-height: 2.8
 km_tabla <- tibble(tiempo = km$time, supervivencia = km$surv, censuras = km$n.censor,
                    grupo = sub("f2p_label=", "", rep(names(km$strata), km$strata)))
 km_tabla <- bind_rows(km_tabla, distinct(km_tabla, grupo) |>
@@ -252,11 +293,28 @@ knitr::kable(tabla_hr, booktabs = TRUE, align = c("l", "r", "c", "r"))
 
 La prueba global de Schoenfeld del modelo final dio p `r pval(ph_final$table['GLOBAL', 'p'])`; para año, p `r pval(ph_final$table['release_year', 'p'])`, y para logros, p `r pval(ph_final$table['log1p(achievements)', 'p'])`. Estos resultados no prueban proporcionalidad: sólo indican que la prueba no detectó una desviación concluyente. No se estima un HR único para acceso, multijugador o género porque se usaron como estratos.
 
-\newpage
+## Estudios de caso: Crush Crush y Terraria
 
-## Casos para una etapa posterior
+La regla selecciona *Crush Crush* (`r casos$appid[1]`) y *Terraria* (`r casos$appid[2]`); el umbral del percentil 80 es `r fmt(umbral_casos)` jugadores promedio. El catálogo clasifica al primero como gratuito y Casual, sin indicador multijugador, con `r casos$achievements[1]` logros; al segundo, de pago y Action, multijugador, con `r casos$achievements[2]` logros. Son características de la captura, no necesariamente las disponibles en el momento del máximo.
 
-Una regla programada exige máximo histórico dentro del 20% superior y 24 meses de historial. Entre los elegibles elige el F2P con más persistencia, priorizando censura, y el juego de pago con evento más temprano. Se seleccionaron *`r casos$game_name_store[1]`* (`r casos$appid[1]`; `r fmt(casos$historical_max_avg[1])` jugadores; `r casos$duration_months[1]` meses, `r ifelse(casos$event_observed[1], 'evento', 'censura')`) y *`r casos$game_name_store[2]`* (`r casos$appid[2]`; `r fmt(casos$historical_max_avg[2])` jugadores; `r casos$duration_months[2]` meses, evento). Son perfiles contrastantes elegidos para una futura investigación, no una muestra representativa ni una identificación de su demografía.
+En los datos, *Crush Crush* alcanzó `r fmt(casos$historical_max_avg[1])` jugadores promedio en `r format(casos$peak_month[1], '%m/%Y')` y no tuvo el evento hasta su censura a los `r casos$duration_months[1]` meses. *Terraria* alcanzó `r fmt(casos$historical_max_avg[2])` en `r format(casos$peak_month[2], '%m/%Y')` y confirmó el evento en `r format(casos$event_month[2], '%m/%Y')`, `r casos$duration_months[2]` meses después. La figura 3 expresa cada serie como porcentaje de su propio máximo; en su último mes observado, *Terraria* conservaba `r fmt(fin_casos$avg_players[fin_casos$appid == '105600'])` jugadores promedio (`r pct(fin_casos$retention_ratio[fin_casos$appid == '105600'])` de su máximo). Por tanto, cruzar el umbral relativo no equivale a perder su comunidad ni impide recuperaciones posteriores. El criterio de selección favorece deliberadamente trayectorias extremas.
+
+```{r}
+#| label: fig-casos
+#| fig-cap: "Trayectorias desde el máximo propio: línea discontinua, umbral de 60%; punto, confirmación del evento. Fuente: SteamCharts y elaboración propia."
+#| fig-height: 2.8
+ggplot(casos_panel, aes(meses, retention_ratio, color = game_name_chart)) +
+  geom_hline(yintercept = 0.6, linetype = "dashed", color = "#777777") +
+  geom_line(linewidth = 0.8) +
+  geom_point(data = filter(casos_panel, event_observed, month_date == event_month), size = 2) +
+  scale_color_manual(values = c("Crush Crush" = "#167C80", "Terraria" = "#666666")) +
+  scale_y_continuous(labels = scales::label_percent(), limits = c(0, 1.05)) +
+  labs(x = "Meses desde el máximo propio", y = "Actividad / máximo")
+```
+
+Según las fichas oficiales, *Crush Crush* es un simulador de citas incremental e individual; *Terraria* combina exploración, construcción y combate, y admite multijugador (Sad Panda Studios, s. f.; Re-Logic, s. f.). Como hipótesis, la progresión del primero podría relacionarse con competencia, mientras la construcción y el juego compartido del segundo podrían ofrecer autonomía y vínculo social, conceptos propuestos por Przybylski et al. (2010). Yee (2006) distingue logro, dimensión social e inmersión en jugadores de MMORPG; trasladar ese marco a estos dos juegos requiere cautela. Ni las series ni las fichas miden motivaciones, público objetivo, identidad o retención individual: no permiten verificar esas hipótesis ni atribuir las trayectorias a las mecánicas.
+
+La ficha actual de Steam indica para *Crush Crush* lanzamiento el 13 de mayo de 2016, mientras el CSV registra 18 de octubre de 2016. Debe verificarse cuál fecha corresponde al periodo de acceso o publicación antes de corregir el filtro; el análisis conserva el dato del CSV.
 
 # Conclusiones
 
@@ -274,5 +332,17 @@ https://doi.org/10.1080/01621459.1958.10501452
 
 Schoenfeld, D. (1982). Partial residuals for the proportional hazards regression model. *Biometrika, 69*(1), 239–241.  
 https://doi.org/10.1093/biomet/69.1.239
+
+Przybylski, A. K., Rigby, C. S., & Ryan, R. M. (2010). A motivational model of video game engagement. *Review of General Psychology, 14*(2), 154–166.  
+https://doi.org/10.1037/a0019440
+
+Yee, N. (2006). Motivations for play in online games. *CyberPsychology & Behavior, 9*(6), 772–775.  
+https://doi.org/10.1089/cpb.2006.9.772
+
+Sad Panda Studios. (s. f.). *Crush Crush* [Ficha de Steam].  
+https://store.steampowered.com/app/459820/Crush_Crush/
+
+Re-Logic. (s. f.). *Terraria* [Ficha de Steam].  
+https://store.steampowered.com/app/105600/Terraria/
 
 Fuentes de datos: archivos `steamcharts.csv` y `games_march2025_cleaned.csv`, copias locales empleadas en el análisis. **Pendiente:** registrar autor, URL original, fecha de descarga y licencia de cada dataset para completar su referencia APA y verificar su procedencia.
