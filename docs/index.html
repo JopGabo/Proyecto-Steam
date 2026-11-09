@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0a111c">
+  <title>Popularidad y persistencia de videojuegos en Steam</title>
+  <link rel="stylesheet" href="styles.css">
+  <script defer src="app.js"></script>
+</head>
+<body>
+  <a class="skip" href="#contenido">Saltar a la presentación</a>
+  <div class="deck" id="contenido">
+    <header class="topbar" aria-label="Identidad de la presentación">
+      <span class="brand"><span class="brand-icon">✳</span> STEAM <span class="brand-muted">/</span> ESTUDIO DE DATOS</span>
+      <span class="top-context">GABRIEL JOP BALTODANO <span>·</span> PROYECTO INDIVIDUAL</span>
+    </header>
+
+    <main id="slides" aria-live="polite">
+      <section class="slide hero active" id="inicio" data-label="Inicio" aria-label="Diapositiva 1: Portada">
+        <div class="hero-grid" aria-hidden="true"></div>
+        <div class="pixel-star star-one" aria-hidden="true">✦</div><div class="pixel-star star-two" aria-hidden="true">✧</div>
+        <div class="hero-landscape" aria-hidden="true"><div class="moon"></div><div class="mountain back"></div><div class="mountain front"></div><div class="terrain"></div><div class="tree tree-a"></div><div class="tree tree-b"></div><div class="pixel-heart">♥</div></div>
+        <div class="hero-copy">
+          <div class="eyebrow"><span class="live-dot"></span> PROYECTO DE ANÁLISIS DE DATOS</div>
+          <h1>Popularidad y persistencia<br>de videojuegos <em>en Steam.</em></h1>
+          <p class="hero-subtitle">Análisis descriptivo y de supervivencia</p>
+          <div class="hero-meta"><span class="line"></span><span>GABRIEL JOP BALTODANO</span><span> / </span><span>JUL 2012 — SEP 2025</span></div>
+        </div>
+        
+      </section>
+
+      <section class="slide" id="datos" data-label="Datos" aria-label="Diapositiva 2: Datos y cohorte">
+        <div class="slide-head"><span class="eyebrow">01 / DATOS</span><span class="chapter">FUENTES Y COHORTE</span></div>
+        <div class="data-layout"><div><h2>Obtención <em>de los datos</em></h2><p class="lead small">Se utilizaron los siguientes conjuntos de datos:</p><div class="source-lines"><div><span>01</span><p><strong>SteamCharts</strong><br>Jugadores promedio por juego y mes.</p></div><div><span>02</span><p><strong>Catálogo de Steam</strong><br>Acceso, género y características.</p></div></div></div>
+        <div class="cohort-panel"><div class="panel-label"><span class="live-dot"></span> CONSTRUCCIÓN DE LA COHORTE</div><div class="funnel-row"><span>Juegos en ambas fuentes</span><strong>5.958</strong></div><div class="funnel-link">↓ <span>unión por appid</span></div><div class="funnel-row"><span>Con al menos 12 meses observados</span><strong>5.579</strong></div><div class="funnel-link">↓ <span>al menos 3 meses desde el máximo</span></div><div class="funnel-row final"><span>Cohorte de supervivencia</span><strong>5.236</strong></div><div class="cohort-foot">Período del panel <strong>JUL 2012 — SEP 2025</strong></div></div></div>
+        <p class="source-note">Fuente: elaboración propia con SteamCharts y catálogo de Steam. Precio cero = aproximación de acceso gratuito en la captura.</p>
+      </section>
+
+      <section class="slide" id="evento" data-label="Evento" aria-label="Diapositiva 3: Evento y censura">
+        <div class="slide-head"><span class="eyebrow">02 / METODOLOGÍA</span><span class="chapter">EL EVENTO</span></div>
+        <div class="event-intro"><div><h2>Definición del<br><em>declive sostenido</em></h2></div><p>No basta con un mes bajo. El evento se confirma cuando la actividad permanece <strong>tres meses consecutivos por debajo del 60 %</strong> del máximo propio.</p></div>
+        <div class="timeline" aria-label="Ejemplo ilustrativo de tres meses consecutivos bajo el umbral">
+          <div class="timeline-line"></div><div class="timeline-node peak"><span class="node-dot"></span><small>ORIGEN</small><strong>100 %</strong><p>Máximo observado</p></div><div class="timeline-node low"><span class="node-dot"></span><small>MES 1</small><strong>52 %</strong><p>Por debajo de 60 %</p></div><div class="timeline-node low"><span class="node-dot"></span><small>MES 2</small><strong>47 %</strong><p>Segundo mes</p></div><div class="timeline-node event"><span class="node-dot"></span><small>MES 3</small><strong>55 %</strong><p>Evento confirmado</p></div>
+        </div>
+        <div class="event-foot"><div></div><div class="censor-note"><span>✳</span><p><strong>¿Y si no ocurre?</strong> El juego se registra como <em>censurado</em> en su último mes observado. No significa que nunca vaya a declinar.</p></div></div>
+      </section>
+
+      <section class="slide results-slide" id="curvas" data-label="Curvas" aria-label="Diapositiva 4: Kaplan-Meier">
+        <div class="slide-head"><span class="eyebrow">03 / KAPLAN–MEIER</span><span class="chapter">KAPLAN–MEIER</span></div>
+        <div class="results-title"><div><h2>Análisis de<br><em>Kaplan–Meier</em></h2><p>Probabilidad estimada de no haber alcanzado el declive sostenido.</p></div><div class="badge">PROBABILIDAD DE NO PRESENTAR DECLIVE<br>POR TIEMPO Y MODALIDAD DE ACCESO</div></div>
+        <div class="results-grid"><figure class="chart"><img src="assets/kaplan-meier.png" alt="Curvas Kaplan-Meier para juegos de pago y gratuitos; el eje horizontal muestra meses desde el máximo y el vertical la probabilidad estimada de no declive."><figcaption>Las cruces indican censura. Fuente: elaboración propia.</figcaption></figure><aside class="result-aside"><span class="panel-label">A LOS 12 MESES</span><div class="metric mint"><strong>15,6<span>%</span></strong><p>Free-to-Play <small>IC 95 %: 13,2–18,5 % · 107 en riesgo</small></p></div><div class="metric gold"><strong>12,1<span>%</span></strong><p>De pago <small>IC 95 %: 11,1–13,1 % · 456 en riesgo</small></p></div><div class="aside-foot">Log-rank global: <strong>p = 0,003</strong><br>Una diferencia no ajustada no demuestra causalidad.</div></aside></div>
+      </section>
+
+      <section class="slide" id="comparacion" data-label="Casos" aria-label="Diapositiva 5: Dos videojuegos">
+        <div class="slide-head"><span class="eyebrow">04 / ESTUDIO DE CASOS</span><span class="chapter">LOS CASOS</span></div>
+        <div class="case-title"><div><h2>Estudio de <em>casos</em></h2><p>Seleccionados con una regla reproducible: popularidad histórica en el 20 % superior y al menos 24 meses de historial.</p></div><span class="case-label">SELECCIÓN CONTRASTANTE<br>NO REPRESENTATIVA</span></div>
+        <div class="case-cards"><article class="case-card crush"><div class="case-top"><span>01 / GRATIS</span><span class="case-glyph">♥</span></div><img class="case-cover" src="assets/crush-crush.jpg" alt="Portada oficial de Crush Crush en Steam"><div class="case-card-content"><span class="case-category">CASUAL · SIN INDICADOR MULTIJUGADOR</span><h3>Crush Crush</h3><p>Simulador de citas incremental con progresión y compras opcionales.</p><div class="case-stat"><strong>65 <small>meses</small></strong><span>sin evento observado<br>hasta la censura</span></div></div></article><article class="case-card terraria"><div class="case-top"><span>02 / DE PAGO</span><span class="case-glyph">✦</span></div><img class="case-cover" src="assets/terraria.jpg" alt="Portada oficial de Terraria en Steam"><div class="case-card-content"><span class="case-category">ACTION · MULTIJUGADOR</span><h3>Terraria</h3><p>Exploración, construcción y combate en un mundo abierto.</p><div class="case-stat"><strong>3 <small>meses</small></strong><span>hasta confirmar<br>el evento</span></div></div></article></div>
+        <p class="source-note">La regla prioriza el gratuito censurado con mayor seguimiento y el de pago con evento más temprano. Son perfiles extremos, no datos demográficos. Fuente: proyecto y fichas de Steam.</p>
+      </section>
+
+      <section class="slide" id="trayectorias" data-label="Trayectorias" aria-label="Diapositiva 6: Trayectorias comparadas">
+        <div class="slide-head"><span class="eyebrow">05 / ESTUDIO DE CASOS</span><span class="chapter">ACTIVIDAD RELATIVA</span></div>
+        <div class="results-title"><div><h2>Trayectorias de<br><em>los casos</em></h2><p>Cada línea se expresa como porcentaje del máximo propio de cada juego.</p></div></div>
+        <div class="trajectory-grid"><figure class="chart case-chart"><img src="assets/trayectorias.png" alt="Serie de jugadores promedio como porcentaje de su máximo: Crush Crush permanece por encima del 60 por ciento y Terraria confirma declive al tercer mes."><figcaption>Línea discontinua: 60 % del máximo. Punto: mes que confirma el evento.</figcaption></figure><aside class="trajectory-aside"><div><span class="case-category rose-text">CRUSH CRUSH</span><strong>1.530,2</strong><p>jugadores promedio en su máximo observado</p></div><div><span class="case-category mint-text">TERRARIA</span><strong>129.808,6</strong><p>jugadores promedio en su máximo observado</p></div><div class="aside-foot">Cruzar el umbral <strong>no significa perder toda la comunidad</strong>: Terraria tenía 18.785,7 jugadores promedio en su último mes observado.</div></aside></div>
+        <p class="source-note">Fuente: datos mensuales SteamCharts. Las dos series no comparten la misma escala absoluta de jugadores.</p>
+      </section>
+
+      <section class="slide" id="contexto" data-label="Contexto" aria-label="Diapositiva 7: Contexto de Terraria">
+        <div class="slide-head"><span class="eyebrow">06 / ESTUDIO DE CASOS</span><span class="chapter">CONTEXTO, NO CAUSA</span></div>
+        <div class="context-layout"><div><span class="context-date">MAYO 2020 <span>·</span> TERRARIA</span><h2><em>Consideraciones</em></h2><p class="lead small">El máximo mensual observado coincidió con el lanzamiento de <strong>Journey’s End</strong>, presentado entonces como su última gran actualización.</p><div class="context-warning"><strong>Una hipótesis, no una demostración.</strong><br>El promedio mensual no permite separar el efecto de la actualización de otros factores.</div></div><div class="signal-panel"><div class="signal-header">CAMBIO EN EL PROMEDIO MENSUAL</div><div class="signal-line"><span>ABRIL 2020</span><strong>51.315,1</strong></div><div class="signal-arrow">↓ <span>16 MAY · LANZAMIENTO</span></div><div class="signal-line accent"><span>MAYO 2020</span><strong>129.808,6</strong></div><div class="signal-footer">JUGADORES CONCURRENTES PROMEDIO</div></div></div>
+        <p class="source-note">Fuente: serie del proyecto y anuncio oficial de Re-Logic. Hubo actualizaciones posteriores, incluida la versión 1.4.1.</p>
+      </section>
+
+      <section class="slide finale" id="cierre" data-label="Cierre" aria-label="Diapositiva 8: Conclusiones y fuentes">
+        <div class="slide-head"><span class="eyebrow">07 / CONCLUSIONES</span><span class="chapter">CONCLUSIONES</span></div>
+        <div class="final-grid"><div><h2><em>Conclusiones</em></h2><p class="lead small">La magnitud del máximo y la persistencia describen aspectos diferentes de la popularidad.</p><div class="takeaways"><div><b>01</b><p>Las curvas de acceso muestran una <strong>diferencia global no ajustada</strong>.</p></div><div><b>02</b><p>Los casos contrastan trayectorias relativas; <strong>no representan todo Steam</strong>.</p></div><div><b>03</b><p>Censura, cobertura y variables no observadas limitan la interpretación. <strong>No hay causalidad demostrada.</strong></p></div></div></div><div class="end-art" aria-hidden="true"><div class="end-moon"></div><div class="end-ground"></div><div class="end-sprout">✳</div><div class="end-heart">♥</div></div></div>
+        <details class="references"><summary>Fuentes y notas del estudio <span>＋</span></summary><div><a href="https://www.kaggle.com/datasets/lunthu/steam-monthly-average-players" target="_blank" rel="noreferrer">Steam Monthly Average Players · Kaggle</a><a href="https://www.kaggle.com/datasets/artermiloff/steam-games-dataset/versions/2" target="_blank" rel="noreferrer">Steam Games Dataset 2025 · Kaggle</a><a href="https://store.steampowered.com/app/459820/Crush_Crush/" target="_blank" rel="noreferrer">Crush Crush · ficha oficial</a><a href="https://store.steampowered.com/app/105600/Terraria/" target="_blank" rel="noreferrer">Terraria · ficha oficial</a><a href="https://store.steampowered.com/oldnews/?appgroupname=Terraria&amp;appids=105600&amp;enddate=1604214000&amp;feed=steam_community_announcements" target="_blank" rel="noreferrer">Journey’s End · anuncios oficiales</a><a href="https://doi.org/10.1080/01621459.1958.10501452" target="_blank" rel="noreferrer">Kaplan y Meier · 1958</a></div></details>
+      </section>
+      <section class="slide thank-you" id="gracias" data-label="Gracias" aria-label="Diapositiva 9: Agradecimiento">
+        <div class="thank-inner"><div class="eyebrow">PRESENTACIÓN DEL PROYECTO</div><h2>¡Muchas <em>gracias!</em></h2><div class="thank-line"></div><p>POPULARIDAD Y PERSISTENCIA DE VIDEOJUEGOS EN STEAM</p></div>
+      </section>
+    </main>
+
+    <footer class="controls"><div class="counter"><span id="current">01</span><span class="counter-line"></span><span id="total">09</span></div><div class="progress-track" aria-hidden="true"><span id="progress"></span></div><div class="keyboard-hint">← → PARA NAVEGAR</div><div class="actions"><button id="fullscreen" class="icon-btn" aria-label="Pantalla completa" title="Pantalla completa">⛶</button><button id="prev" class="icon-btn arrow" aria-label="Diapositiva anterior" title="Anterior">‹</button><button id="next" class="icon-btn arrow primary" aria-label="Diapositiva siguiente" title="Siguiente">›</button></div></footer>
+  </div>
+</body>
+</html>
