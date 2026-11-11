@@ -1,27 +1,26 @@
-# Popularidad y persistencia de videojuegos en Steam — presentación
+# Presentación interactiva
 
-Presentación navegable basada en el informe `Version5.pdf`. No necesita instalación ni conexión para mostrar las diapositivas: abre `index.html` en un navegador moderno y conserva la carpeta `assets` junto al archivo. La conexión solo es necesaria para abrir las fuentes externas.
+Esta carpeta contiene la presentación web del proyecto y el informe al que dirige su código QR.
 
-## Navegación
+- [Abrir la presentación publicada](https://jopgabo.github.io/Proyecto-Steam/).
+- [Abrir el informe publicado](https://jopgabo.github.io/Proyecto-Steam/informe.pdf).
 
-Usa los botones de la parte inferior o las flechas izquierda y derecha; Inicio y Fin llevan a la primera y última diapositiva. El botón ⛶ o la tecla F activa la pantalla completa cuando el navegador lo permite. En pantallas pequeñas se puede desplazar verticalmente cada diapositiva y deslizar horizontalmente entre ellas. La lista de fuentes se despliega en la diapositiva de conclusiones. En las dos preguntas al público usa «Mostrar respuesta» para revelar los resultados después de la votación; el mismo botón permite volver a ocultarlos. En la diapositiva de declive, usa «Avanzar ejemplo» para mostrar los tres meses uno a uno.
+## Uso local y navegación
+
+Abre `index.html` en un navegador moderno y conserva `assets/` junto a ese archivo. Las diapositivas y recursos incluidos funcionan sin conexión; los enlaces a fuentes y al informe publicado necesitan internet.
+
+Avanza con los botones inferiores o las flechas izquierda y derecha. Las teclas Inicio y Fin llevan a la primera y última diapositiva; el botón ⛶ o la tecla F permite usar pantalla completa cuando el navegador lo admite. En pantallas pequeñas se puede desplazar verticalmente cada diapositiva y deslizar horizontalmente para navegar.
+
 
 ## Archivos
 
 - `index.html`: contenido y estructura.
-- `styles.css`, `projection.css` y `versus.css`: diseño, colores de alto contraste y adaptación a pantalla.
-- `app.js`: navegación, controles y pantalla completa.
-- `assets/kaplan-meier.png` y `assets/trayectorias.png`: gráficos reproducidos desde los datos del proyecto.
-- `assets/crush-crush.jpg` y `assets/terraria.jpg`: portadas oficiales tomadas de las fichas de Steam de [Crush Crush](https://store.steampowered.com/app/459820/Crush_Crush/) y [Terraria](https://store.steampowered.com/app/105600/Terraria/). Derechos de las imágenes correspondientes a sus titulares.
-- `assets/qr-informe.png`: código QR para el informe PDF publicado directamente en GitHub Pages. El enlace también aparece junto al código en la diapositiva de conclusiones.
-- `generar_graficos.R`: script opcional para regenerar los gráficos; requiere R, tidyverse, survival y el archivo fuente Quarto en la carpeta superior, además de los datos en las rutas que ese archivo utiliza. La presentación terminada no necesita R ni los datos para abrirse.
+- `app.js`: controles, navegación y respuestas interactivas.
+- `styles.css`, `projection.css` y `versus.css`: diseño y adaptación a pantalla.
+- [`assets/`](assets/): gráficos, imágenes de juegos, logo de Steam y QR. Sus fuentes están documentadas en [assets/README.md](assets/README.md).
+- `informe.pdf`: copia del informe a la que apunta el QR. No se sincroniza automáticamente con `res/`.
+- `generar_graficos.R`: script utilizado para reconstruir los gráficos de la presentación en la copia de trabajo original.
 
-Las portadas y el logo proceden de recursos oficiales de Steam. Las fuentes de datos, fichas y documentación están enlazadas en la diapositiva final. Los resultados describen la cohorte y las comparaciones no ajustadas; no establecen causalidad.
+**Limitación del script:** en la estructura actual del repositorio, `generar_graficos.R` busca `Individual_Jop_HerramientasDatosI_2026.qmd` en la carpeta superior, pero el archivo fuente del repositorio se llama `cod/proyecto_steam_resumido.qmd`. Por ello no se puede ejecutar sin adaptar y verificar esa ruta. La presentación ya incluye los PNG y no necesita R ni los CSV para abrirse.
 
-## Créditos de recursos visuales
 
-- Identidad de Steam: [recursos y guía de marca de Valve](https://partner.steamgames.com/doc/marketing/branding?language=english).
-- Portadas: [Crush Crush](https://store.steampowered.com/app/459820/Crush_Crush/), [Terraria](https://store.steampowered.com/app/105600/Terraria/), [Portal 2](https://store.steampowered.com/app/620/Portal_2/), [Stardew Valley](https://store.steampowered.com/app/413150/Stardew_Valley/) y [Hollow Knight](https://store.steampowered.com/app/367520/Hollow_Knight/), servidas por Steam. Las portadas adicionales son ilustrativas y no identifican casos analizados.
-- Ilustración de Journey’s End: [anuncio oficial de Terraria en Steam](https://store.steampowered.com/news/app/105600/view/2205019689483334899).
-
-Las imágenes y marcas pertenecen a sus respectivos titulares; sus créditos no implican afiliación o patrocinio. Para exponer, comprueba el contraste y el tamaño del texto en el proyector y salón reales.
