@@ -27,6 +27,25 @@
     }
   }
 
+  document.querySelectorAll('[data-reveal]').forEach(button => {
+    button.addEventListener('click', () => {
+      const answer = document.getElementById(button.dataset.reveal);
+      const open = button.getAttribute('aria-expanded') !== 'true';
+      button.setAttribute('aria-expanded', String(open));
+      answer.hidden = !open;
+      button.innerHTML = open ? 'Ocultar respuesta <span>↑</span>' : 'Mostrar respuesta <span>↓</span>';
+    });
+  });
+
+  const stepButton = document.querySelector('[data-step-next]');
+  const timeline = document.querySelector('.timeline[data-step]');
+  stepButton.addEventListener('click', () => {
+    const currentStep = Number(timeline.dataset.step);
+    const nextStep = currentStep >= 3 ? 0 : currentStep + 1;
+    timeline.dataset.step = String(nextStep);
+    stepButton.textContent = nextStep === 3 ? 'Reiniciar ejemplo ↺' : 'Avanzar ejemplo →';
+  });
+
   previous.addEventListener('click', () => show(index - 1));
   next.addEventListener('click', () => show(index + 1));
   document.querySelectorAll('[data-next]').forEach(button => button.addEventListener('click', () => show(index + 1)));
