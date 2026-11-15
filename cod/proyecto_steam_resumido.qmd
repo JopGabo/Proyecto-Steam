@@ -40,14 +40,21 @@ library(tidyverse)
 library(survival)
 
 # Para el repositorio, colocar este QMD en cod/ y los CSV en data/.
-# La segunda opción permite ejecutar esta copia de trabajo sin modificar el repositorio.
+
 rutas_datos <- c("../data", "../Proyecto personalGIT/ProyectoHerr/data")
+
+# Verifica que esten los datos con las rutas correctas
 directorio_datos <- rutas_datos[vapply(rutas_datos, function(ruta) {
   all(file.exists(file.path(ruta, c("steamcharts.csv", "games_march2025_cleaned.csv"))))
 }, logical(1))][1]
 if (is.na(directorio_datos)) stop("No se encontraron ambos CSV. Ajusta rutas_datos en el QMD.")
+```
 
+
+```{r}
 # Se conserva la selección y limpieza del avance previo; las fechas del panel son mensuales.
+
+# Seleccionando las columnas que pueden ser utiles para el estudio
 columnas_games_necesarias <- c(
   "appid", "name", "release_date", "required_age", "price", "dlc_count",
   "windows", "mac", "linux", "metacritic_score", "achievements",
@@ -57,13 +64,26 @@ columnas_games_necesarias <- c(
   "median_playtime_2weeks", "peak_ccu", "pct_pos_total", "num_reviews_total",
   "pct_pos_recent", "num_reviews_recent"
 )
+
+#Cargando los datos crudos
 steam_raw <- readr::read_csv(file.path(directorio_datos, "steamcharts.csv"), show_col_types = FALSE)
+
+
 games_raw <- readr::read_csv(file.path(directorio_datos, "games_march2025_cleaned.csv"),
                              col_select = all_of(columnas_games_necesarias), show_col_types = FALSE)
+
+# Preparando y limpiando los meses para realizar un estudio por meses
 fechas_steam <- steam_raw |>
   mutate(month_date = readr::parse_date(paste("01", month), format = "%d %b-%y",
                                        locale = readr::locale(date_names = "en")))
+
+# Fecha donde se finaliza el estudio
 fecha_corte <- max(fechas_steam$month_date, na.rm = TRUE)
+```
+
+
+```{r}
+# Limpiando los datos para que esten en el formato deseado.
 
 steam_clean <- fechas_steam |>
   transmute(appid = as.character(steam_appid), game_name_chart = str_squish(name),
@@ -105,19 +125,36 @@ games_clean <- games_raw |>
     platform_count = as.integer(windows) + as.integer(mac) + as.integer(linux),
     reviews_total = if_else(!is.na(positive) & !is.na(negative), positive + negative, NA_real_),
     negative_share = if_else(reviews_total > 0, negative / reviews_total, NA_real_))
+```
 
+
+```{r}
 # Unión uno-a-muchos por appid; se exige historial posterior al lanzamiento.
+
 ids_steam <- distinct(steam_clean, appid)
 ids_games <- distinct(games_clean, appid)
+
+# Observaciones en ambos datasets
 n_coinciden <- nrow(inner_join(ids_steam, ids_games, by = "appid"))
 panel_unido <- inner_join(steam_clean, games_clean, by = "appid")
-panel_post <- panel_unido |> filter(month_date >= release_date)
-juegos_elegibles <- panel_post |> count(appid, name = "n_meses") |> filter(n_meses >= 12L)
+
+# Corroborando que no hayan incongruencias en los datos (como observaciones antes de que salga el juego)
+
+panel_post <- panel_unido |> 
+  filter(month_date >= release_date)
+
+# Parte de los supuestos, mas de 1 año de observaciones
+juegos_elegibles <- panel_post |> 
+  count(appid, name = "n_meses") |> 
+  filter(n_meses >= 12L)
+
+# El panel listo para el estudio de supervivencia por meses
 panel_analisis <- inner_join(panel_post, juegos_elegibles, by = "appid")
 
 # El evento se confirma al tercer mes consecutivo bajo el 60% del máximo observado.
 panel_retencion <- panel_analisis |>
-  group_by(appid) |> arrange(month_date, .by_group = TRUE) |>
+  group_by(appid) |> 
+  arrange(month_date, .by_group = TRUE) |>
   mutate(month_index = as.integer(format(month_date, "%Y")) * 12L + as.integer(format(month_date, "%m")),
          historical_max_avg = max(avg_players, na.rm = TRUE),
          peak_month = min(month_date[avg_players == historical_max_avg]),
@@ -128,23 +165,44 @@ panel_retencion <- panel_analisis |>
          decline_event = below_threshold & lag(below_threshold, default = FALSE) &
            lag(below_threshold, n = 2L, default = FALSE) & month_gap == 1L & lag(month_gap) == 1L) |>
   ungroup()
-trayectoria <- panel_retencion |> group_by(appid) |>
-  summarise(historical_max_avg = first(historical_max_avg), peak_month = first(peak_month),
+
+
+# Trayectorias por juego, con el mes donde se alcanza el pico y fechas pertinentes
+
+trayectoria <- panel_retencion |> 
+  group_by(appid) |>
+  summarise(
+    historical_max_avg = first(historical_max_avg),
+    peak_month = first(peak_month),
     last_observed_month = max(month_date),
     event_month = if (any(decline_event, na.rm = TRUE)) min(month_date[decline_event]) else as.Date(NA),
     event_observed = any(decline_event, na.rm = TRUE), n_meses_observados = n_distinct(month_date),
     .groups = "drop") |>
-  mutate(end_month = if_else(event_observed, event_month, last_observed_month),
+  mutate(
+    end_month = if_else(event_observed, event_month, last_observed_month),
     peak_index = as.integer(format(peak_month, "%Y")) * 12L + as.integer(format(peak_month, "%m")),
     end_index = as.integer(format(end_month, "%Y")) * 12L + as.integer(format(end_month, "%m")),
-    duration_months = end_index - peak_index)
-caracteristicas <- panel_analisis |> arrange(appid, month_date) |> group_by(appid) |>
-  slice(1) |> ungroup() |>
-  select(appid, game_name_store, f2p, f2p_label, multiplayer,
-         multiplayer_label, genre_primary, achievements)
-game_level <- inner_join(caracteristicas, trayectoria, by = "appid")
-survival_data <- game_level |> filter(duration_months >= 3L)
+    duration_months = end_index - peak_index
+    )
 
+
+#Caracteristicas por juego
+caracteristicas <- panel_analisis |>
+  arrange(appid, month_date) |>
+  group_by(appid) |>
+  slice(1) |>
+  ungroup() |>
+  select(appid, game_name_store, f2p, f2p_label, multiplayer, multiplayer_label, genre_primary, achievements)
+
+# Uniendo los juegos que estan en caracteristicas y tienen trayectoria
+game_level <- inner_join(caracteristicas, trayectoria, by = "appid")
+
+# Seleccionando los juegos que tienen mas de tres meses desde el peak month
+survival_data <- game_level |> filter(duration_months >= 3L)
+```
+
+
+```{r}
 # Kaplan–Meier y log-rank comparan trayectorias sin ajuste por otras características.
 km <- survfit(Surv(duration_months, event_observed) ~ f2p_label,
               data = survival_data, conf.type = "log", conf.int = 0.95)
@@ -152,6 +210,8 @@ logrank <- survdiff(Surv(duration_months, event_observed) ~ f2p_label, data = su
 logrank_multi <- survdiff(Surv(duration_months, event_observed) ~ multiplayer_label, data = survival_data)
 km_12 <- summary(km, times = 12)$surv
 names(km_12) <- sub("f2p_label=", "", summary(km, times = 12)$strata)
+
+
 # Los intervalos puntuales usan la varianza de Greenwood y la transformación logarítmica
 # que implementa survfit; n.risk cuenta juegos en riesgo justo antes del mes indicado.
 km_horizontes <- summary(km, times = c(12, 24, 36), extend = FALSE)
@@ -161,27 +221,50 @@ tabla_km <- tibble(
   estimacion = km_horizontes$surv, inferior = km_horizontes$lower,
   superior = km_horizontes$upper
 )
+```
 
+
+```{r}
 # Regla automática: popularidad superior al percentil 80 e historial de 24+ meses.
+# Para seleccion de los casos de estudio
+
 umbral_casos <- quantile(survival_data$historical_max_avg, 0.8, na.rm = TRUE, names = FALSE)
-candidatos <- survival_data |> filter(historical_max_avg >= umbral_casos, n_meses_observados >= 24L)
-caso_f2p <- candidatos |> filter(f2p) |>
-  arrange(desc(!event_observed), desc(duration_months), desc(historical_max_avg), appid) |> slice_head(n = 1)
-caso_pago <- candidatos |> filter(!f2p, event_observed) |>
-  arrange(duration_months, desc(historical_max_avg), appid) |> slice_head(n = 1)
+
+candidatos <- survival_data |> 
+  filter(historical_max_avg >= umbral_casos, n_meses_observados >= 24L)
+
+caso_f2p <- candidatos |> 
+  filter(f2p) |>
+  arrange(desc(!event_observed), desc(duration_months), desc(historical_max_avg), appid) |>
+  slice_head(n = 1)
+
+caso_pago <- candidatos |> 
+  filter(!f2p, event_observed) |>
+  arrange(duration_months, desc(historical_max_avg), appid) |> 
+  slice_head(n = 1)
+
 if (nrow(caso_f2p) != 1L || nrow(caso_pago) != 1L) stop("La regla no encontró dos perfiles de casos.")
 casos <- bind_rows(caso_f2p, caso_pago)
 # Detener la generación de los casos narrados si los datos actualizados cambian la selección.
 if (!identical(casos$appid, c("459820", "105600"))) {
   stop("La regla seleccionó otros juegos. Revisa los casos y actualiza el análisis documental; no cambies la regla silenciosamente.")
 }
+
+
+
 casos_panel <- panel_retencion |>
   filter(appid %in% casos$appid, after_peak) |>
   mutate(meses = month_index - (as.integer(format(peak_month, "%Y")) * 12L +
     as.integer(format(peak_month, "%m")))) |>
   left_join(casos |> select(appid, event_month, event_observed), by = "appid")
-fin_casos <- casos_panel |> group_by(appid) |> slice_max(month_date, n = 1, with_ties = FALSE) |>
-  ungroup() |> arrange(appid)
+
+fin_casos <- casos_panel |> group_by(appid) |> 
+  slice_max(month_date, n = 1, with_ties = FALSE) |>
+  ungroup() |> 
+  arrange(appid)
+
+
+
 # Para mostrar contexto anterior al máximo sin alterar el origen del análisis de supervivencia.
 terraria_2020 <- steam_clean |>
   filter(appid == "105600", month_date >= as.Date("2020-01-01"),
@@ -231,6 +314,8 @@ En la cohorte, `r pct(mean(survival_data$f2p))` de los juegos eran gratuitos seg
 #| label: fig-popularidad
 #| fig-cap: "Distribución del máximo de jugadores promedio por juego. Fuente: elaboración propia con SteamCharts y catálogo de Steam."
 #| fig-height: 2.7
+
+# Grafico de maximo de jugadores por juego en escala logaritmica por la cola. (solo visual)
 ggplot(survival_data |> filter(historical_max_avg > 0), aes(historical_max_avg)) +
   geom_histogram(bins = 40, fill = "#167C80", color = "white") +
   scale_x_log10(labels = scales::label_number()) +
@@ -245,10 +330,16 @@ Se observaron `r fmt(sum(survival_data$event_observed), 0)` eventos y `r fmt(sum
 #| label: fig-km
 #| fig-cap: "Kaplan–Meier según acceso; cruces: censuras. Fuente: elaboración propia con SteamCharts y catálogo de Steam."
 #| fig-height: 2.8
+
+# preparando tabla de kaplan-meier
 km_tabla <- tibble(tiempo = km$time, supervivencia = km$surv, censuras = km$n.censor,
                    grupo = sub("f2p_label=", "", rep(names(km$strata), km$strata)))
+
+
 km_tabla <- bind_rows(km_tabla, distinct(km_tabla, grupo) |>
   mutate(tiempo = 0, supervivencia = 1, censuras = 0)) |> arrange(grupo, tiempo)
+
+# grafico de curva de kaplan meier
 ggplot(km_tabla, aes(tiempo, supervivencia, color = grupo)) +
   geom_step(linewidth = 0.8) +
   geom_point(data = filter(km_tabla, censuras > 0), shape = 3, size = 1.6) +
@@ -264,6 +355,8 @@ La tabla 1 presenta intervalos de confianza puntuales del 95% y juegos en riesgo
 ```{r}
 #| label: tbl-incertidumbre
 #| tbl-cap: "Kaplan–Meier por acceso: estimación puntual, IC del 95% y juegos en riesgo. Fuente: elaboración propia."
+
+# Tabla que muestra los intervalos de confianza (95%) de kaplan-meier para algunos meses
 tabla_km |>
   transmute(Acceso = acceso, `Mes` = mes, `En riesgo` = en_riesgo,
     `Sin declive` = pct(estimacion),
@@ -282,6 +375,9 @@ La regla selecciona *Crush Crush* (`r casos$appid[1]`) y *Terraria* (`r casos$ap
 #| fig-cap: "Trayectorias desde el máximo propio: línea discontinua, umbral de 60%; punto, confirmación del evento. Fuente: SteamCharts y elaboración propia."
 #| fig-height: 2.5
 #| fig-pos: H
+
+
+# Gráfico que compara las trayectorias entre terraria y crush crush
 ggplot(casos_panel, aes(meses, retention_ratio, color = game_name_chart)) +
   geom_hline(yintercept = 0.6, linetype = "dashed", color = "#777777") +
   geom_line(linewidth = 0.8) +
