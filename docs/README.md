@@ -21,6 +21,6 @@ Avanza con los botones inferiores o las flechas izquierda y derecha. Las teclas 
 - `informe.pdf`: copia del informe a la que apunta el QR. No se sincroniza automáticamente con `res/`.
 - `generar_graficos.R`: script utilizado para reconstruir los gráficos de la presentación en la copia de trabajo original.
 
-**Limitación del script:** en la estructura actual del repositorio, `generar_graficos.R` busca `Individual_Jop_HerramientasDatosI_2026.qmd` en la carpeta superior, pero el archivo fuente del repositorio se llama `cod/proyecto_steam_resumido.qmd`. Por ello no se puede ejecutar sin adaptar y verificar esa ruta. La presentación ya incluye los PNG y no necesita R ni los CSV para abrirse.
+**Limitación del script:** en la estructura actual del repositorio, `generar_graficos.R` busca el archivo `Individual_Jop_HerramientasDatosI_2026.qmd` en la carpeta raíz, pero el archivo se encuentra dentro de `cod/`. Por ello no se puede ejecutar sin adaptar y verificar la ruta. La presentación ya incluye los PNG y no necesita R ni los CSV para abrirse.
 
 

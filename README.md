@@ -12,7 +12,7 @@ El informe utiliza el estimador de Kaplan–Meier para describir la persistencia
 
 ## Resultados y presentación
 
-- [Informe final en PDF](res/proyecto_steam_resumido.pdf).
+- [Informe final en PDF](res/Individual_Jop_HerramientasDatosI_2026.pdf).
 - [Presentación interactiva](https://jopgabo.github.io/Proyecto-Steam/).
 - [PDF accesible desde la presentación](https://jopgabo.github.io/Proyecto-Steam/informe.pdf).
 
@@ -38,7 +38,7 @@ El panel mensual utilizado abarca de julio de 2012 a septiembre de 2025. El arch
 Para ejecutar el informe se necesitan R, Quarto, los paquetes `tidyverse` y `survival`, y una instalación de LaTeX que incluya XeLaTeX. Con ambos CSV en `data/`, desde la raíz del repositorio:
 
 ```bash
-quarto render cod/proyecto_steam_resumido.qmd --to pdf --output-dir ../res
+quarto render cod/Individual_Jop_HerramientasDatosI_2026.qmd --to pdf --output-dir ../res
 ```
 
 El comando escribe el PDF en `res/` y puede sobrescribir el informe existente. La copia `docs/informe.pdf` que utiliza la presentación no se actualiza automáticamente. Consulta [cod/README.md](cod/README.md) para más detalles.
